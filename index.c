@@ -102,7 +102,6 @@ static int compare_index_entries(const void *a, const void *b) {
 
 int index_load(Index *index) {
     index->count = 0;
-
     FILE *f = fopen(INDEX_FILE, "r");
     if (!f) return 0;
 
@@ -110,26 +109,21 @@ int index_load(Index *index) {
     while (index->count < MAX_INDEX_ENTRIES) {
         IndexEntry *e = &index->entries[index->count];
         int ret = fscanf(f, "%o %64s %llu %u %511s",
-                         &e->mode,
-                         hex,
+                         &e->mode, hex,
                          (unsigned long long *)&e->mtime_sec,
-                         &e->size,
-                         e->path);
+                         &e->size, e->path);
         if (ret == EOF || ret != 5) break;
         if (hex_to_hash(hex, &e->hash) != 0) break;
         index->count++;
     }
-
     fclose(f);
     return 0;
 }
 
 int index_save(const Index *index) {
-    // Sort entries by path before saving
     Index sorted = *index;
     qsort(sorted.entries, sorted.count, sizeof(IndexEntry), compare_index_entries);
 
-    // Write to temp file
     char tmp_path[] = INDEX_FILE ".tmp";
     FILE *f = fopen(tmp_path, "w");
     if (!f) return -1;
@@ -144,12 +138,10 @@ int index_save(const Index *index) {
                 e->size, e->path);
     }
 
-    // Flush userspace buffer + fsync to disk
     fflush(f);
     fsync(fileno(f));
     fclose(f);
 
-    // Atomic rename
     if (rename(tmp_path, INDEX_FILE) != 0) {
         unlink(tmp_path);
         return -1;
@@ -158,6 +150,31 @@ int index_save(const Index *index) {
 }
 
 int index_add(Index *index, const char *path) {
-    (void)index; (void)path;
-    return -1;
+    // Step 1: Read file contents
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "error: cannot open '%s'\n", path);
+        return -1;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    uint8_t *buf = malloc((size_t)file_size);
+    if (!buf) { fclose(f); return -1; }
+
+    fread(buf, 1, (size_t)file_size, f);
+    fclose(f);
+
+    // Step 2: Write blob to object store
+    ObjectID blob_id;
+    if (object_write(OBJ_BLOB, buf, (size_t)file_size, &blob_id) != 0) {
+        free(buf);
+        return -1;
+    }
+    free(buf);
+
+    (void)index;
+    return -1; // metadata update in next commit
 }
