@@ -99,12 +99,26 @@ int index_status(const Index *index) {
 int index_load(Index *index) {
     index->count = 0;
 
-    // If index file doesn't exist, that's fine — empty index
     FILE *f = fopen(INDEX_FILE, "r");
-    if (!f) return 0;  // not an error, just no staged files yet
+    if (!f) return 0; // empty index is fine
+
+    // Format: <mode> <hex-hash> <mtime> <size> <path>
+    char hex[HASH_HEX_SIZE + 1];
+    while (index->count < MAX_INDEX_ENTRIES) {
+        IndexEntry *e = &index->entries[index->count];
+        int ret = fscanf(f, "%o %64s %llu %u %511s",
+                         &e->mode,
+                         hex,
+                         (unsigned long long *)&e->mtime_sec,
+                         &e->size,
+                         e->path);
+        if (ret == EOF || ret != 5) break;
+        if (hex_to_hash(hex, &e->hash) != 0) break;
+        index->count++;
+    }
 
     fclose(f);
-    return -1; // parsing in next commit
+    return 0;
 }
 
 int index_save(const Index *index) {
