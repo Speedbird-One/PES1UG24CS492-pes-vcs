@@ -193,57 +193,40 @@ int head_update(const ObjectID *new_commit) {
 //   - head_update       : moves the branch pointer to your new commit
 //
 // Returns 0 on success, -1 on error.
-
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    Commit new_commit;
-    memset(&new_commit, 0, sizeof(Commit));
+    Commit c;
+    memset(&c, 0, sizeof(c));
 
-    // 1. Build the tree from the current index staging area.
-    // This writes the tree object(s) to the store and gives us the root tree ID.
-    if (tree_from_index(&new_commit.tree) != 0) {
-        fprintf(stderr, "error: failed to build tree from index\n");
-        return -1;
-    }
+    // 1. Build tree from index
+    if (tree_from_index(&c.tree) != 0) return -1;
 
-    // 2. Get the parent commit hash.
-    // If head_read succeeds, it means there's an existing commit history.
-    // If it fails, this is the very first commit (root commit), so has_parent = 0.
-    if (head_read(&new_commit.parent) == 0) {
-        new_commit.has_parent = 1;
+    // 2. Read current HEAD as parent (may not exist for first commit)
+    ObjectID parent_id;
+    if (head_read(&parent_id) == 0) {
+        c.parent = parent_id;
+        c.has_parent = 1;
     } else {
-        new_commit.has_parent = 0;
+        c.has_parent = 0;
     }
 
-    // 3. Set Author and Timestamp
-    strncpy(new_commit.author, pes_author(), sizeof(new_commit.author) - 1);
-    new_commit.author[sizeof(new_commit.author) - 1] = '\0';
-    new_commit.timestamp = (uint64_t)time(NULL);
+    // 3. Fill author and timestamp
+    snprintf(c.author, sizeof(c.author), "%s", pes_author());
+    c.timestamp = (uint64_t)time(NULL);
 
-    // 4. Set the Commit Message
-    strncpy(new_commit.message, message, sizeof(new_commit.message) - 1);
-    new_commit.message[sizeof(new_commit.message) - 1] = '\0';
+    // 4. Fill message
+    snprintf(c.message, sizeof(c.message), "%s", message);
 
-    // 5. Serialize the Commit struct into a text buffer
-    void *commit_data = NULL;
-    size_t commit_len = 0;
-    if (commit_serialize(&new_commit, &commit_data, &commit_len) != 0) {
-        fprintf(stderr, "error: failed to serialize commit\n");
-        return -1;
+    // 5. Serialize commit
+    void *data;
+    size_t len;
+    if (commit_serialize(&c, &data, &len) != 0) return -1;
+
+    // 6. Write commit object
+    if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
+        free(data); return -1;
     }
+    free(data);
 
-    // 6. Write the serialized commit text to the object store as OBJ_COMMIT
-    if (object_write(OBJ_COMMIT, commit_data, commit_len, commit_id_out) != 0) {
-        fprintf(stderr, "error: failed to write commit object\n");
-        free(commit_data);
-        return -1;
-    }
-    free(commit_data);
-
-    // 7. Update the current branch (HEAD) to point to this new commit
-    if (head_update(commit_id_out) != 0) {
-        fprintf(stderr, "error: failed to update HEAD\n");
-        return -1;
-    }
-
-    return 0;
+    // 7. Update HEAD to point to the new commit
+    return head_update(commit_id_out);
 }
