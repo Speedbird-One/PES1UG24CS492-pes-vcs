@@ -10,6 +10,8 @@
 //   "100644 hello.txt\0" followed by 32 raw bytes of SHA-256
 
 #include "tree.h"
+#include "index.h"
+#include "pes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,7 +134,7 @@ static int write_tree_recursive(const IndexEntry *entries, int num_entries, int 
             t_entry->mode = entries[i].mode;
             strncpy(t_entry->name, current_path, sizeof(t_entry->name) - 1);
             t_entry->name[sizeof(t_entry->name) - 1] = '\0';
-            t_entry->hash = entries[i].id;
+            t_entry->hash = entries[i].hash;
             i++; 
         } else {
             // RECURSIVE CASE: It's a file inside a subdirectory.
